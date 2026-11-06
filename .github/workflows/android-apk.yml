@@ -38,20 +38,50 @@ jobs:
         run: |
           mkdir -p extracted
           unzip -o PrimePanel_Floating_Project.zip -d extracted
-          ls -la extracted
 
       - name: Locate Project
         run: |
           PROJECT_DIR=$(dirname "$(find extracted -type f \( -name settings.gradle.kts -o -name settings.gradle \) -print -quit)")
-          if [ -z "$PROJECT_DIR" ] || [ "$PROJECT_DIR" = "extracted" ]; then
+
+          if [ -z "$PROJECT_DIR" ] || [ "$PROJECT_DIR" = "." ]; then
             PROJECT_DIR=extracted
           fi
+
           if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ] && [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
             echo "Gradle project not found!"
             exit 1
           fi
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           echo "Project found: $PROJECT_DIR"
+
+      - name: Fix Java Kotlin JVM Target
+        run: |
+          APP_GRADLE=$(find "$PROJECT_DIR" -path '*/app/build.gradle.kts' -print -quit)
+
+          if [ -z "$APP_GRADLE" ]; then
+            echo "app/build.gradle.kts not found!"
+            exit 1
+          fi
+
+          cat >> "$APP_GRADLE" <<'EOF'
+
+          // Prime Panel: enforce Java and Kotlin JVM 17
+          android {
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+          }
+
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          EOF
+
+          echo "APK_PATH=$(dirname "$APP_GRADLE")/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -66,5 +96,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PrimePanel-APK
-          path: extracted/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
