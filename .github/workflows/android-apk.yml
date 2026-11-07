@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -23,13 +23,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Locate Android SDK and install required packages
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -n 1)
-          echo "Using: $SDKMANAGER"
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME}"
 
-          set +o pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found"
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses || true
 
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
@@ -37,24 +45,43 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Extract Prime Panel ZIP
+      - name: Verify and extract project ZIP
+        shell: bash
         run: |
+          set -euo pipefail
+
+          test -f PrimePanel_Login_Anime_v0_3.zip
+          unzip -t PrimePanel_Login_Anime_v0_3.zip
+
           mkdir -p extracted
-          unzip -o PrimePanel_Original_Project_Fixed.zip -d extracted
+          unzip -oq PrimePanel_Login_Anime_v0_3.zip -d extracted
+
           test -f extracted/settings.gradle.kts
+          test -f extracted/build.gradle.kts
+          test -f extracted/app/build.gradle.kts
+          test -f extracted/app/src/main/AndroidManifest.xml
+          test -f extracted/app/src/main/java/com/primepanel/visual/MainActivity.kt
+          test -f extracted/app/src/main/java/com/primepanel/visual/FloatingPanelService.kt
+          test -f extracted/app/src/main/res/drawable-nodpi/prime_logo.jpg
+          test -f extracted/app/src/main/res/drawable-nodpi/anime_wallpaper.jpg
+          test -f extracted/app/src/main/res/drawable-nodpi/anime_banner.jpg
+
+          echo "Project ZIP structure verified."
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build APK
+      - name: Build Debug APK
+        shell: bash
         run: |
+          set -euo pipefail
           cd extracted
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          gradle --no-daemon assembleDebug
+          gradle --no-daemon clean assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: PrimePanel-APK
+          name: PrimePanel-APK-v0.3.0
           path: extracted/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
